@@ -1,0 +1,62 @@
+#!/bin/bash
+
+#Variavel data e informações do chat do telegram
+hoje=`date +"%Y-%m-%d"`
+TOKEN="tolken do telegram"
+CHAT_ID="do telegram" 
+
+# Coleta o nome da pessoa se tiver algum chamado do tipo ESPUMA no arquivo18.csv
+nome=$(cat /caminho/do/arquvio/arquivo18.csv | grep $hoje  | grep -i "espuma" | cut -d ";" -f10 | head -n1)
+
+# Coleta o id do chamado que foi aberto
+idchamado=$(cat /caminho/do/arquvio/arquivo18.csv | grep $hoje | grep -i "espuma" | cut -d ";" -f1 | head -n1)
+
+# Verifica se o chamado ja esta no arquivo espumas.csv e encerra o script se estiver
+linha=$(grep "$nome" /caminho/do/arquvio/espumas.csv)
+
+if echo "$linha" | grep -q "$hoje"; then
+  exit 1
+else
+  # Se o nome estiver em espumas.csv e não for hoje
+  if [ -n "$linha" ]; then
+    # Pega a data da primeira coluna onde encontrou o nome
+    data_antiga=$(echo "$linha" | cut -d ';' -f1)
+    # Soma 180 dias a essa data
+    data_somada=$(date -d"$data_antiga + 180 days" +"%Y-%m-%d")
+    # Verifica se hoje é maior que a soma
+    if [ "$data_somada" \> "$hoje" ]; then
+      echo "$hoje; $nome; LIBERADO" >> "/caminho/de/destino/.csv"
+      msg="Data: $hoje; Chamado: $idchamado; Operador: $nome; Status: COBRADO"  
+    else
+      echo "$hoje; $nome; COBRADO" >> "/caminho/do/arquvio/espumas.csv"
+      msg="Data: $hoje; Chamado: $idchamado; Operador: $nome; Status: LIBERADO"
+    fi
+    curl -s -X POST https://api.telegram.org/bot$TOKEN/sendMessage -d chat_id=$CHAT_ID -d text="$msg"
+    exit 1
+  fi
+fi
+# Caso tenha algum chamado, ele procura na tabela funcionario.csv e coleta a data de admissao, setando esse valor na variavel
+data_adm=$(grep "$nome" /caminho/do/arquvio/funcionario.csv | cut -d ',' -f8 | tr -d '""')
+
+# Converte a data para o formato 'ano-mes-dia'
+data_formatada=$(date -d"$data_adm" +"%Y-%m-%d")
+
+# Adiciona 180 dias a data
+seism=$(date -d"$data_formatada + 180 days" +"%Y-%m-%d")
+
+#Aqui é feita a verofocação se o equipamento vai ter cobrança ou se vai ser liberado sem ela
+if [ "$seism" \> "$hoje" ]; then
+  msg="Data: $hoje; Chamado: $idchamado; Operador: $nome; Status: COBRADO"
+else
+  msg="Data: $hoje; Chamado: $idchamado; Operador: $nome; Status: LIBERADO"
+fi
+
+# Envia a mensagem para o Telegram usando a API do bot
+curl -s -X POST https://api.telegram.org/bot$TOKEN/sendMessage -d chat_id=$CHAT_ID -d text="$msg"
+
+# Aqui ele salva no arquivo espumas.csv quando é feito uma solicitação
+if [ "$seism" \> "$hoje" ]; then
+  echo "$hoje; $nome; COBRADO" >> "/caminho/do/arquvio/espumas.csv"
+else
+  echo "$hoje; $nome; LIBERADO" >> "/caminho/do/arquvio/espumas.csv"
+fi
